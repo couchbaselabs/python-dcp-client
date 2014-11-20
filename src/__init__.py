@@ -2,6 +2,16 @@ import operation
 from connection import Connection
 from constants import FLAG_OPEN_CONSUMER, FLAG_OPEN_PRODUCER
 
+class ResponseHandler():
+    def __init__(self):
+        self.done = False
+
+    def add_response(self, response):
+        raise NotImplementedError("Subclass must implement abstract method")
+
+    def ended(self):
+        self.done = True
+
 
 class DcpClient():
 
@@ -47,5 +57,5 @@ class DcpClient():
         self.conn.queue_operation(op)
         return op
 
-    def shutdown(self):
-        self.conn.close()
+    def shutdown(self, force):
+        self.conn.close(force)

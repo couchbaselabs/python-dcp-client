@@ -40,6 +40,9 @@ class Connection(threading.Thread):
             self.join()
             self.socket.close()
 
+        for op in self.ops:
+            op.network_error()
+
     def queue_operation(self, op):
         if not self.running:
             op.network_error()

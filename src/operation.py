@@ -6,27 +6,35 @@ import constants as C
 
 class ResponseHandler():
     def __init__(self):
-        pass
+        self.done = 0
+
+    def add_response(self, response):
+        raise NotImplementedError("Subclass must implement abstract method")
+
+    def using(self):
+        self.done = self.done + 1
+
+    def ended(self):
+        self.done = self.done - 1
+
+    def finished(self):
+        return self.done == 0
 
 class QueuedResponseHandler(ResponseHandler):
     def __init__(self):
         ResponseHandler.__init__(self)
         self.responses = Queue.Queue()
-        self.done = False
 
     def add_response(self, response):
         self.responses.put(response)
 
     def has_response(self):
-        return self.responses.qsize() > 0 or not self.done
+        return self.responses.qsize() > 0 or self.done > 0
 
     def next_response(self):
-        if self.done and self.responses.qsize() == 0:
+        if self.finished() and self.responses.qsize() == 0:
             return None
         return self.responses.get(True)
-
-    def ended(self):
-        self.done = True
 
 class Operation():
 
@@ -42,6 +50,7 @@ class Operation():
         self.key = key
         self.value = value
         self.handler = handler
+        self.handler.using()
 
     def add_response(self, opcode, keylen, extlen, status, cas, body):
         raise NotImplementedError("Subclass must implement abstract method")
