@@ -6,7 +6,7 @@ HEADER_LEN = 24
 REQ_MAGIC = 0x80
 RES_MAGIC = 0x81
 
-# UPR command opcodes
+# DCP command opcodes
 CMD_OPEN             = 0x50
 CMD_ADD_STREAM       = 0x51
 CMD_CLOSE_STREAM     = 0x52

@@ -4,7 +4,7 @@ import struct
 import threading
 import time
 
-from upr.constants import (HEADER_LEN, PKT_HEADER_FMT, CMD_STREAM_REQ,
+from dcp.constants import (HEADER_LEN, PKT_HEADER_FMT, CMD_STREAM_REQ,
                            RES_MAGIC, SUCCESS)
 
 

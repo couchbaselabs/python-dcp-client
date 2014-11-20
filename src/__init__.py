@@ -1,9 +1,9 @@
-from upr import operation
-from upr.connection import Connection
-from upr.constants import FLAG_OPEN_CONSUMER, FLAG_OPEN_PRODUCER
+from dcp import operation
+from dcp.connection import Connection
+from dcp.constants import FLAG_OPEN_CONSUMER, FLAG_OPEN_PRODUCER
 
 
-class UprClient():
+class DcpClient():
 
     def __init__(self, host='127.0.0.1', port=11210):
         self.conn = Connection(host, port)
