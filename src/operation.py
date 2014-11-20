@@ -2,7 +2,7 @@ import binascii
 import Queue
 import struct
 
-from upr import constants as C
+import constants as C
 
 
 class Operation():

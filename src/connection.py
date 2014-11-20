@@ -4,8 +4,8 @@ import struct
 import threading
 import time
 
-from dcp.constants import (HEADER_LEN, PKT_HEADER_FMT, CMD_STREAM_REQ,
-                           RES_MAGIC, SUCCESS)
+from constants import (HEADER_LEN, PKT_HEADER_FMT, CMD_STREAM_REQ,
+                       RES_MAGIC, SUCCESS)
 
 
 class Connection(threading.Thread):

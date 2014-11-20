@@ -1,6 +1,6 @@
-from dcp import operation
-from dcp.connection import Connection
-from dcp.constants import FLAG_OPEN_CONSUMER, FLAG_OPEN_PRODUCER
+import operation
+from connection import Connection
+from constants import FLAG_OPEN_CONSUMER, FLAG_OPEN_PRODUCER
 
 
 class DcpClient():
