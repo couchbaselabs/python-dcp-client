@@ -1,12 +1,12 @@
 from setuptools import setup
 
 setup(
-    name='dcp-client',
+    name='DCP-Client',
     version='0.3',
     description='Basic DCP client',
     author='Couchbase',
     author_email='mike@couchbase.com',
-    packages=['dcp-client'],
+    packages=['dcp'],
     classifiers=[
         'Programming Language :: Python',
         'Programming Language :: Python :: 2.7',
