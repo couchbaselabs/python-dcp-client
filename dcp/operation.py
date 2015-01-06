@@ -4,43 +4,32 @@ import struct
 
 import constants as C
 
-class ResponseHandler():
-    def __init__(self):
-        self.done = 0
+import threading
 
-    def add_response(self, response):
-        raise NotImplementedError("Subclass must implement abstract method")
+class CountdownLatch(object):
+    def __init__(self, count=1):
+        self.count = count
+        self.lock = threading.Condition()
+    
+    def count_down(self):
+        self.lock.acquire()
+        self.count -= 1
+        if self.count <= 0:
+            self.lock.notifyAll()
+        self.lock.release()
+    
+    def await(self):
+        self.lock.acquire()
+        while self.count > 0:
+            self.lock.wait()
+        self.lock.release()
 
-    def using(self):
-        self.done = self.done + 1
-
-    def ended(self):
-        self.done = self.done - 1
-
-    def finished(self):
-        return self.done == 0
-
-class QueuedResponseHandler(ResponseHandler):
-    def __init__(self):
-        ResponseHandler.__init__(self)
-        self.responses = Queue.Queue()
-
-    def add_response(self, response):
-        self.responses.put(response)
-
-    def has_response(self):
-        return self.responses.qsize() > 0 or self.done > 0
-
-    def next_response(self):
-        if self.finished() and self.responses.qsize() == 0:
-            return None
-        return self.responses.get(True)
 
 class Operation():
 
     opaque_counter = 0xFFFF0000
 
-    def __init__(self, opcode, data_type, vbucket, cas, key, value, handler):
+    def __init__(self, opcode, data_type, vbucket, cas, key, value):
         Operation.opaque_counter += 1
         self.opcode = opcode
         self.data_type = data_type
@@ -49,15 +38,18 @@ class Operation():
         self.cas = cas
         self.key = key
         self.value = value
-        self.handler = handler
-        self.handler.using()
+        self.result = None
 
     def add_response(self, opcode, keylen, extlen, status, cas, body):
         raise NotImplementedError("Subclass must implement abstract method")
 
     def network_error(self):
-        self.handler.add_response({'status': C.ERR_ECLIENT})
-        self.handler.ended()
+        pass
+
+    def get_result(self):
+        self.latch.await()
+        assert self.result is not None
+        return self.result
 
     def bytes(self):
         extras = self._get_extras()
@@ -76,87 +68,40 @@ class Operation():
 
 class OpenConnection(Operation):
 
-    def __init__(self, flags, name, handler = QueuedResponseHandler()):
-        Operation.__init__(self, C.CMD_OPEN, 0, 0, 0, name, '', handler)
+    def __init__(self, flags, name, latch):
+        Operation.__init__(self, C.CMD_OPEN, 0, 0, 0, name, '')
         self.flags = flags
+        self.latch = latch
+        self.result = True
 
     def add_response(self, opcode, keylen, extlen, status, cas, body):
         assert cas == 0
         assert keylen == 0
         assert extlen == 0
-        self.handler.add_response({'opcode': opcode,
-                                   'status': status,
-                                   'value': body})
-        self.handler.ended()
-        return True
+        #self.handler.add_response({'opcode': opcode,
+        #                           'status': status,
+        #                           'value': body})
+        if status != C.SUCCESS:
+            self.result = False
+        
+        self.latch.count_down()
 
     def _get_extras(self):
         return struct.pack(">II", 0, self.flags)
 
 
-class AddStream(Operation):
-
-    def __init__(self, vbucket, flags, handler = QueuedResponseHandler()):
-        Operation.__init__(self, C.CMD_ADD_STREAM, 0, vbucket, 0, '', '',
-                           handler)
-        self.flags = flags
-
-    def add_response(self, opcode, keylen, extlen, status, cas, body):
-        assert cas == 0
-        assert keylen == 0
-
-        opaque = None
-        if extlen == 4:
-            opaque = struct.unpack(">I", body[0:4])
-        self.handler.add_response({'opcode': opcode,
-                                   'status': status,
-                                   'stream_opaque': opaque,
-                                   'extlen': extlen,
-                                   'value': body[4:]})
-        self.handler.ended()
-        return True
-
-    def _get_extras(self):
-        return struct.pack(">I", self.flags)
-
-
 class CloseStream(Operation):
 
-    def __init__(self, vbucket, handler = QueuedResponseHandler()):
-        Operation.__init__(self, C.CMD_CLOSE_STREAM, 0, vbucket, 0, '', '',
-                           handler)
+    def __init__(self, vbucket):
+        Operation.__init__(self, C.CMD_CLOSE_STREAM, 0, vbucket, 0, '', '')
 
     def add_response(self, opcode, keylen, extlen, status, cas, body):
         assert cas == 0
         assert keylen == 0
         assert extlen == 0
-        self.handler.add_response({'opcode': opcode,
-                                   'status': status,
-                                   'value': body})
-        self.handler.ended()
-        return True
-
-    def _get_extras(self):
-        return ''
-
-
-class GetFailoverLog(Operation):
-
-    def __init__(self, vbucket, handler = QueuedResponseHandler()):
-        Operation.__init__(self, C.CMD_GET_FAILOVER_LOG, 0, vbucket, 0, '', '',
-                           handler)
-
-    def add_response(self, opcode, keylen, extlen, status, cas, body):
-        assert cas == 0
-        assert keylen == 0
-        assert extlen == 0
-
-        if status == C.SUCCESS:
-            assert len(body) % 16 == 0
-        self.handler.add_response({'opcode': opcode,
-                                   'status': status,
-                                   'value': body})
-        self.handler.ended()
+        #self.handler.add_response({'opcode': opcode,
+        #                           'status': status,
+        #                           'value': body})
         return True
 
     def _get_extras(self):
@@ -166,79 +111,38 @@ class GetFailoverLog(Operation):
 class StreamRequest(Operation):
 
     def __init__(self, vb, flags, start_seqno, end_seqno, vb_uuid, snap_start,
-                 snap_end, handler = QueuedResponseHandler()):
-        Operation.__init__(self, C.CMD_STREAM_REQ, 0, vb, 0, '', '', handler)
+                 snap_end, latch):
+        Operation.__init__(self, C.CMD_STREAM_REQ, 0, vb, 0, '', '')
         self.flags = flags
         self.start_seqno = start_seqno
         self.end_seqno = end_seqno
         self.vb_uuid = vb_uuid
         self.snap_start = snap_start
         self.snap_end = snap_end
+        self.latch = latch
+        self.result = dict()
 
     def add_response(self, opcode, keylen, extlen, status, cas, body):
-        if opcode == C.CMD_STREAM_REQ:
-            assert cas == 0
-            assert keylen == 0
-            assert extlen == 0
+        assert cas == 0
+        assert keylen == 0
+        assert extlen == 0
 
-            result = {'opcode': opcode,
-                      'status': status}
+        self.result['status'] = status
 
-            if status == C.SUCCESS:
-                assert (len(body) % 16) == 0
-                result['failover_log'] = []
+        if status == C.SUCCESS:
+            assert (len(body) % 16) == 0
+            self.result['failover_log'] = list()
 
-                pos = 0
-                bodylen = len(body)
-                while bodylen > pos:
-                    vb_uuid, seqno = struct.unpack(">QQ", body[pos:pos+16])
-                    result['failover_log'].append((vb_uuid, seqno))
-                    pos += 16
-            else:
-                result['err_msg'] = body
+            pos = 0
+            bodylen = len(body)
+            while bodylen > pos:
+                vb_uuid, seqno = struct.unpack(">QQ", body[pos:pos+16])
+                self.result['failover_log'].append((vb_uuid, seqno))
+                pos += 16
+        else:
+            self.result['err_msg'] = body
 
-            self.handler.add_response(result)
-            if status != C.SUCCESS:
-                return True
-        elif opcode == C.CMD_STREAM_END:
-            assert cas == 0
-            assert keylen == 0
-            assert extlen == 4
-            flags = struct.unpack(">I", body[0:4])[0]
-            self.handler.add_response({'opcode': opcode,
-                                       'vbucket': status,
-                                       'flags': flags})
-            self.handler.ended()
-            return True
-        elif opcode == C.CMD_MUTATION:
-            by_seqno, rev_seqno, flags, exp, lock_time, ext_meta_len, nru = \
-                struct.unpack(">QQIIIHB", body[0:31])
-            key = body[31:31+keylen]
-            value = body[31+keylen:]
-            self.handler.add_response({'opcode': opcode,
-                                       'vbucket': status,
-                                       'by_seqno': by_seqno,
-                                       'rev_seqno': rev_seqno,
-                                       'flags': flags,
-                                       'expiration': exp,
-                                       'lock_time': lock_time,
-                                       'nru': nru,
-                                       'key': key,
-                                       'value': value})
-        elif opcode == C.CMD_DELETION:
-            by_seqno, rev_seqno, ext_meta_len = \
-                struct.unpack(">QQH", body[0:18])
-            key = body[18:18+keylen]
-            self.handler.add_response({'opcode': opcode,
-                                       'vbucket': status,
-                                       'by_seqno': by_seqno,
-                                       'rev_seqno': rev_seqno,
-                                       'key': key})
-        elif opcode == C.CMD_SNAPSHOT_MARKER:
-            self.handler.add_response({'opcode': opcode,
-                                       'vbucket': status})
-
-        return False
+        self.latch.count_down()
 
     def _get_extras(self):
         return struct.pack(">IIQQQQQ", self.flags, 0, self.start_seqno,
@@ -248,15 +152,13 @@ class StreamRequest(Operation):
 
 class SaslPlain(Operation):
 
-    def __init__(self, username, password, handler = QueuedResponseHandler()):
+    def __init__(self, username, password):
         value = '\0'.join(['', username, password])
-        Operation.__init__(self, C.CMD_SASL_AUTH, 0, 0, 0, 'PLAIN', value,
-                           handler)
+        Operation.__init__(self, C.CMD_SASL_AUTH, 0, 0, 0, 'PLAIN', value)
 
     def add_response(self, opcode, keylen, extlen, status, cas, body):
-        self.handler.ended()
-        self.handler.add_responses({'opcode': opcode,
-                                    'status': status})
+        #self.handler.add_response({'opcode': opcode,
+        #                           'status': status})
         return True
 
     def _get_extras(self):

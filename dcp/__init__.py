@@ -1,61 +1,106 @@
+
 import operation
-from connection import Connection
-from constants import FLAG_OPEN_CONSUMER, FLAG_OPEN_PRODUCER
+import threading
+import time
+
+from cluster import RestClient
+from connection import ConnectionManager
+from constants import FLAG_OPEN_PRODUCER
+from dcp_exception import ConnectedException
+from operation import CountdownLatch, OpenConnection, StreamRequest
 
 class ResponseHandler():
-    def __init__(self):
-        self.done = False
 
-    def add_response(self, response):
+    def __init__(self):
+        self.active_streams = 0
+
+    def mutation(self, response):
         raise NotImplementedError("Subclass must implement abstract method")
 
-    def ended(self):
-        self.done = True
+    def deletion(self, response):
+        raise NotImplementedError("Subclass must implement abstract method")
 
+    def marker(self, response):
+        raise NotImplementedError("Subclass must implement abstract method")
 
-class DcpClient():
+    def stream_end(self, response):
+        raise NotImplementedError("Subclass must implement abstract method")
 
-    def __init__(self, host='127.0.0.1', port=11210):
-        self.conn = Connection(host, port)
-        self.conn.connect()
+    def has_active_streams(self):
+        assert self.active_streams >= 0
+        return self.active_streams != 0
 
-    def sasl_auth_plain(self, username, password):
-        op = operation.SaslPlain(username, password)
-        self.conn.queue_operation(op)
-        return op
+    def _incr_active_streams(self):
+        self.active_streams += 1
 
-    def set_proxy(self, client):
-        self.conn.proxy = client.conn.socket
+    def _decr_active_streams(self):
+        self.active_streams -= 1
 
-    def open_consumer(self, *args, **kwargs):
-        op = operation.OpenConnection(FLAG_OPEN_CONSUMER, *args, **kwargs)
-        self.conn.queue_operation(op)
-        return op
+class DcpClient(object):
 
-    def open_producer(self, *args, **kwargs):
-        op = operation.OpenConnection(FLAG_OPEN_PRODUCER, *args, **kwargs)
-        self.conn.queue_operation(op)
-        return op
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.rest = None
+        self.connection = None
 
-    def add_stream(self, *args, **kwargs):
-        op = operation.AddStream(*args, **kwargs)
-        self.conn.queue_operation(op)
-        return op
+    # Returns true is connections are successful
+    def connect(self, host, port, bucket, user, pwd, handler):
+        # Runs open connection on each node and sends control commands
+        self.lock.acquire()
+        if self.connection is not None:
+            raise ConnectedException("Connection already established")
 
-    def close_stream(self, *args, **kwargs):
-        op = operation.CloseStream(*args, **kwargs)
-        self.conn.queue_operation(op)
-        return op
+        self.rest = RestClient(host, port, user, pwd)
+        self.rest.update()
+        cluster_config = self.rest.get_nodes()
+        bucket_config = self.rest.get_bucket(bucket)
 
-    def get_failover_log(self, *args, **kwargs):
-        op = operation.GetFailoverLog(*args, **kwargs)
-        self.conn.queue_operation(op)
-        return op
+        self.connection = ConnectionManager(handler)
+        self.connection.connect(cluster_config, bucket_config)
 
-    def stream_req(self, *args, **kwargs):
-        op = operation.StreamRequest(*args, **kwargs)
-        self.conn.queue_operation(op)
-        return op
+        # Todo: Add ability to do authentication
 
-    def shutdown(self, force):
-        self.conn.close(force)
+        # Send the open connection message
+        latch = CountdownLatch(len(self.rest.get_nodes()))
+        op = OpenConnection(FLAG_OPEN_PRODUCER, "test_stream", latch)
+        self.connection.add_operation_all(op)
+        # Todo: Check the value of get_result
+        op.get_result()
+
+        # Todo: Add the ability to send control messages
+
+        self.lock.release()
+
+    # Returns true if the stream is successfully created
+    def add_stream(self, vbucket, flags, start_seqno, end_seqno, vb_uuid,
+                   snap_start, snap_end):
+        self.lock.acquire()
+        if self.connection is None:
+            raise ConnectedException("Not connected")
+
+        latch = CountdownLatch()
+        op = StreamRequest(vbucket, flags, start_seqno, end_seqno, vb_uuid,
+                           snap_start, snap_end, latch)
+        self.connection.add_operation(op, vbucket)
+        ret = op.get_result()
+
+        self.lock.release()
+        return ret
+
+    # Returns true if the stream is closed successfully
+    def close_stream(self):
+        self.lock.acquire()
+        if self.connection is None:
+            raise ConnectedException("Not connected")
+        raise NotImplementedError("Not impemented yet")
+        self.lock.release()
+
+    def close(self):
+        self.lock.acquire()
+        self.connection.close()
+        self.client = None
+        self.nodes = None
+        self.buckets = None
+        self.connection = None
+        self.lock.release()
+
