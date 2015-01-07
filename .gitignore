@@ -1,4 +1,7 @@
 .DS_Store
 *~
+*.pyc
 
-.pyc
+build/
+dist/
+DCP_Client.egg-info/
