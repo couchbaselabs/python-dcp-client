@@ -78,9 +78,7 @@ class OpenConnection(Operation):
         assert cas == 0
         assert keylen == 0
         assert extlen == 0
-        #self.handler.add_response({'opcode': opcode,
-        #                           'status': status,
-        #                           'value': body})
+
         if status != C.SUCCESS:
             self.result = False
         
@@ -99,9 +97,6 @@ class CloseStream(Operation):
         assert cas == 0
         assert keylen == 0
         assert extlen == 0
-        #self.handler.add_response({'opcode': opcode,
-        #                           'status': status,
-        #                           'value': body})
         return True
 
     def _get_extras(self):
@@ -157,8 +152,6 @@ class SaslPlain(Operation):
         Operation.__init__(self, C.CMD_SASL_AUTH, 0, 0, 0, 'PLAIN', value)
 
     def add_response(self, opcode, keylen, extlen, status, cas, body):
-        #self.handler.add_response({'opcode': opcode,
-        #                           'status': status})
         return True
 
     def _get_extras(self):
