@@ -7,7 +7,7 @@ from cluster import RestClient
 from connection import ConnectionManager
 from constants import FLAG_OPEN_PRODUCER
 from dcp_exception import ConnectedException
-from operation import CountdownLatch, OpenConnection, StreamRequest
+from operation import CountdownLatch, Control, OpenConnection, StreamRequest
 
 class ResponseHandler():
 
@@ -38,10 +38,11 @@ class ResponseHandler():
 
 class DcpClient(object):
 
-    def __init__(self):
+    def __init__(self, priority="medium"):
         self.lock = threading.Lock()
         self.rest = None
         self.connection = None
+        self.priority = priority
 
     # Returns true is connections are successful
     def connect(self, host, port, bucket, user, pwd, handler):
@@ -66,6 +67,13 @@ class DcpClient(object):
         self.connection.add_operation_all(op)
         # Todo: Check the value of get_result
         op.get_result()
+
+        # Send the set priority control message
+        latch = CountdownLatch(len(self.rest.get_nodes()))
+        op = Control("set_priority", self.priority, latch)
+        self.connection.add_operation_all(op)
+        # Todo: Check the value of get_result
+        print op.get_result()
 
         # Todo: Add the ability to send control messages
 

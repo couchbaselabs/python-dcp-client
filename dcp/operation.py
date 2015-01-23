@@ -87,6 +87,25 @@ class OpenConnection(Operation):
     def _get_extras(self):
         return struct.pack(">II", 0, self.flags)
 
+class Control(Operation):
+
+    def __init__(self, param, value, latch):
+        Operation.__init__(self, C.CMD_OPEN, 0, 0, 0, param, value)
+        self.latch = latch
+        self.result = True
+
+    def add_response(self, opcode, keylen, extlen, status, cas, body):
+        assert cas == 0
+        assert keylen == 0
+        assert extlen == 0
+
+        if status != C.SUCCESS:
+            self.result = False
+
+        self.latch.count_down()
+
+    def _get_extras(self):
+        return ''
 
 class CloseStream(Operation):
 
