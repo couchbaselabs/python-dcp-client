@@ -66,7 +66,6 @@ class DcpClient(object):
         op = SaslPlain(bucket, bucket_password, latch)
         self.connection.add_operation_all(op)
         # Todo: Check the value of get_result
-        print op.get_result()
 
         # Send the open connection message
         latch = CountdownLatch(len(self.rest.get_nodes()))
@@ -80,7 +79,6 @@ class DcpClient(object):
         op = Control("set_priority", self.priority, latch)
         self.connection.add_operation_all(op)
         # Todo: Check the value of get_result
-        print op.get_result()
 
         # Todo: Add the ability to send control messages
 
