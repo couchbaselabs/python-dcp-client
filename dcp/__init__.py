@@ -2,6 +2,7 @@
 import operation
 import threading
 import time
+import uuid
 
 from cluster import RestClient
 from connection import ConnectionManager
@@ -68,8 +69,9 @@ class DcpClient(object):
         # Todo: Check the value of get_result
 
         # Send the open connection message
+        name = 'py_dcp_' + str(uuid.uuid4())[0:7] + str(uuid.uuid4())[0:7]
         latch = CountdownLatch(len(self.rest.get_nodes()))
-        op = OpenConnection(FLAG_OPEN_PRODUCER, "test_stream", latch)
+        op = OpenConnection(FLAG_OPEN_PRODUCER, name, latch)
         self.connection.add_operation_all(op)
         # Todo: Check the value of get_result
         op.get_result()
