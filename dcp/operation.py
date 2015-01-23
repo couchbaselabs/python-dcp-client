@@ -166,12 +166,16 @@ class StreamRequest(Operation):
 
 class SaslPlain(Operation):
 
-    def __init__(self, username, password):
-        value = '\0'.join(['', username, password])
-        Operation.__init__(self, C.CMD_SASL_AUTH, 0, 0, 0, 'PLAIN', value)
+    def __init__(self, username, password, latch):
+        val = '\0'.join(['', username, password])
+        Operation.__init__(self, C.CMD_SASL_AUTH, 0, 0, 0, 'PLAIN', val)
+        self.latch = latch
+        self.result = True
 
     def add_response(self, opcode, keylen, extlen, status, cas, body):
-        return True
+        if status != C.SUCCESS:
+            self.result = False
+        self.latch.count_down()
 
     def _get_extras(self):
         return ''

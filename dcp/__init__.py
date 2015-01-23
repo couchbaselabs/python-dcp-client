@@ -7,7 +7,8 @@ from cluster import RestClient
 from connection import ConnectionManager
 from constants import FLAG_OPEN_PRODUCER
 from dcp_exception import ConnectedException
-from operation import CountdownLatch, Control, OpenConnection, StreamRequest
+from operation import (CountdownLatch, Control, OpenConnection, SaslPlain,
+                       StreamRequest)
 
 class ResponseHandler():
 
@@ -55,11 +56,17 @@ class DcpClient(object):
         self.rest.update()
         cluster_config = self.rest.get_nodes()
         bucket_config = self.rest.get_bucket(bucket)
+        bucket_password = bucket_config['password'].encode('ascii')
 
         self.connection = ConnectionManager(handler)
         self.connection.connect(cluster_config, bucket_config)
 
-        # Todo: Add ability to do authentication
+        # Send the sasl auth message
+        latch = CountdownLatch(len(self.rest.get_nodes()))
+        op = SaslPlain(bucket, bucket_password, latch)
+        self.connection.add_operation_all(op)
+        # Todo: Check the value of get_result
+        print op.get_result()
 
         # Send the open connection message
         latch = CountdownLatch(len(self.rest.get_nodes()))
