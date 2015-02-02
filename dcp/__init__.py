@@ -69,7 +69,7 @@ class DcpClient(object):
         # Todo: Check the value of get_result
 
         # Send the open connection message
-        name = 'py_dcp_' + str(uuid.uuid4())[0:7] + str(uuid.uuid4())[0:7]
+        name = 'py_dcp:' + str(uuid.uuid4())[0:7] + str(uuid.uuid4())[0:7]
         latch = CountdownLatch(len(self.rest.get_nodes()))
         op = OpenConnection(FLAG_OPEN_PRODUCER, name, latch)
         self.connection.add_operation_all(op)
